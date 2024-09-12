@@ -1,2 +1,2 @@
-# vue-printer-bluetooth2
- print bluetooth
+# vue-printer-bluetooth
+ sample print to bluetooth
