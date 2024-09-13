@@ -9,7 +9,9 @@ export default {
   },
   data() {
     return {
-      printCharacteristic: null
+      printCharacteristic: null,
+      indexData: 0,
+      dataPrint: null
     }
   },
   methods: {
@@ -32,7 +34,7 @@ export default {
           .then((service) => service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb'))
           .then(async (characteristic) => {
             this.printCharacteristic = characteristic
-            this.printValue()
+            this.sendPrintData()
           })
           .catch(this.handleError)
       } catch (error) {
@@ -57,7 +59,6 @@ export default {
           headerText += dt.innerText + '\n'
         }
       })
-      await this.sendToPrinter(headerText)
       return headerText
     },
 
@@ -74,8 +75,7 @@ export default {
           footerText += dt.innerText + '\n'
         }
       })
-      await this.sendToPrinter(footerText + '\n' + '\u000A\u000D')
-      return footerText
+      return footerText + '\n\n'
     },
 
     async htmlTableToPlainText() {
@@ -109,31 +109,50 @@ export default {
             '\n'
         }
       })
-      await this.sendToPrinter(tableText)
       return `\n${tableText}`
     },
 
-    async printValue() {
+    sendNextDataBatch() {
+      // Can only write 512 bytes at a time to the characteristic
+      // Need to send the image data in 512 byte batches
+      if (this.indexData + 512 < this.dataPrint.length) {
+        let dt = this.dataPrint.slice(this.indexData, this.indexData + 512)
+        console.log(dt)
+        this.printCharacteristic.writeValue(dt).then(() => {
+          this.indexData += 512
+          this.sendNextDataBatch()
+        })
+      } else {
+        // Send the last bytes
+        console.log(this.indexData)
+        console.log(this.dataPrint.length)
+
+        if (this.indexData < this.dataPrint.length) {
+          let dt = this.dataPrint.slice(this.indexData, this.dataPrint.length)
+          this.printCharacteristic.writeValue(dt)
+        } else {
+          //resolve()
+        }
+      }
+    },
+
+    async sendPrintData() {
+      this.indexData = 0
+      let encoder = new TextEncoder('utf-8')
+
       const headers = await this.getHeaderText()
       const tables = await this.htmlTableToPlainText()
       const footers = await this.getFooterText()
-      let textToPrint = headers + tables + footers
-      console.log(textToPrint)
-    },
-
-    async sendToPrinter(data) {
-      let encoder = new TextEncoder('utf-8')
-      const command = encoder.encode(data + '\u000A\u000D')
-      return this.printCharacteristic.writeValue(command).then(() => {
-        console.log('Write done.')
-      })
+      const command = encoder.encode(headers + tables + footers + '\u000A\u000D')
+      this.dataPrint = command
+      this.sendNextDataBatch()
     },
 
     async printPage() {
-      if (this.printCharacteristic === null) {
+      if (this.printCharacteristic == null) {
         await this.requestBluetoothAccess()
       } else {
-        this.printValue()
+        this.sendPrintData()
       }
     }
   }
